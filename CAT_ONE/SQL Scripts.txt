@@ -1,0 +1,239 @@
+1. PART ONE: Schema/DB Tables
+-- Create enums first of all
+CREATE TYPE gender_enum AS ENUM ('Male', 'Female');
+CREATE TYPE grade_enum AS ENUM ('A','B','C','D','E','F','S');
+--Teacher table script
+CREATE TABLE TEACHERS(
+  TeacherID   integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  FirstName   varchar(30) NOT NULL,
+  LastName    varchar(30),
+  Gender      gender_enum,
+  Subject     varchar(30) NOT NULL,
+  Email       varchar(50),
+  Qualification varchar(40) NOT NULL,
+  Phone       varchar(15)
+  );
+-- Class table Script
+CREATE TABLE CLASSES (
+  ClassID   integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  ClassName varchar(30) NOT NULL,
+  Year      date,
+  TeacherID integer,
+  CONSTRAINT fk_class_teacher FOREIGN KEY (TeacherID)
+    REFERENCES TEACHERS (TeacherID)
+);
+-- Student table Script
+CREATE TABLE STUDENTS (
+  StudentID integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  FirstName varchar(30) NOT NULL,
+  LastName  varchar(30),
+  Gender    gender_enum,
+  ClassID   integer,
+  DOB       date,
+  Phone     varchar(15),
+  CONSTRAINT fk_student_class FOREIGN KEY (ClassID)
+    REFERENCES CLASSES (ClassID)
+   );
+-- Subject table Script
+CREATE TABLE SUBJECTS (
+  SubjectID integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  Name      varchar(40) NOT NULL,
+  Credits   integer CHECK (Credits IS NOT NULL AND Credits > 0),
+  TeacherID integer,
+  CONSTRAINT fk_subject_teacher FOREIGN KEY (TeacherID)
+    REFERENCES TEACHERS (TeacherID)
+   );
+-- Exam table Script
+CREATE TABLE EXAMS (
+  ExamID    integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  SubjectID integer NOT NULL,
+  ExamDate  date,
+  Type      varchar(25) NOT NULL,
+  CONSTRAINT fk_exam_subject FOREIGN KEY (SubjectID)
+    REFERENCES SUBJECTS (SubjectID)
+    );
+-- Result table Script (ON DELETE CASCADE with EXAMS)
+CREATE TABLE RESULTS (
+  ResultID  integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  ExamID    integer NOT NULL,
+  StudentID integer NOT NULL,
+  Marks     integer NOT NULL CHECK (Marks BETWEEN 0 AND 100),
+  Grade     grade_enum,
+  CONSTRAINT fk_result_exam FOREIGN KEY (ExamID)
+    REFERENCES EXAMS (ExamID)
+    ON DELETE CASCADE      -- <--- when an Exam is deleted, its Results are deleted
+    ON UPDATE CASCADE,
+  CONSTRAINT fk_result_student FOREIGN KEY (StudentID)
+    REFERENCES STUDENTS (StudentID),
+ 	CONSTRAINT uq_result_exam_student UNIQUE (ExamID, StudentID) -- <-- avoid duplicate result entries
+);
+PART TWO: SQL QUERIES
+Q3. INSERT
+(a) Ten sample rows have been inserted into TEACHERS table
+-- 1. Insert 10 sample records/rows into TEACHERS
+INSERT INTO Teacher (FirstName, LastName, Subject, Email, Qualification, Gender, Phone)
+VALUES
+('Alice', 'Mukamana', 'Mathematics', 'alice.mukamana@school.edu', 'BSc in Mathematics', 'Female', '+250781111111'),
+('Jean', 'Ndayisenga', 'English', 'jean.ndayisenga@school.edu', 'BA in English Literature', 'Male', '+250782222222'),
+('Claudine', 'Uwimana', 'Science', 'claudine.uwimana@school.edu', 'BEd in Science Education', 'Female', '+250783333333'),
+('Eric', 'Habimana', 'ICT', 'eric.habimana@school.edu', 'BSc in Computer Science', 'Male', '+250784444444'),
+('Grace', 'Iradukunda', 'History', 'grace.iradukunda@school.edu', 'BA in History', 'Female', '+250785555555'),
+('Patrick', 'Nshimiyimana', 'Geography', 'patrick.nshimiyimana@school.edu', 'BA in Geography', 'Male', '+250786666666'),
+('Diane', 'Uwase', 'Kinyarwanda', 'diane.uwase@school.edu', 'BEd in Language Education', 'Female', '+250787777777'),
+('Samuel', 'Twizeyimana', 'Physics', 'samuel.twizeyimana@school.edu', 'BSc in Physics', 'Male', '+250788888888'),
+('Esther', 'Mukandayisenga', 'Chemistry', 'esther.mukandayisenga@school.edu', 'BSc in Chemistry', 'Female', '+250789999999'),
+('David', 'Karangwa', 'Biology', 'david.karangwa@school.edu', 'BSc in Biology', 'Male', '+250780000000');
+-- 2. Insert 10 sample rows (TeacherID values reference 1–10 from TEACHERS table)
+INSERT INTO CLASSES (ClassName, Year, TeacherID)
+VALUES
+('Grade 6A', '2025-01-01', 1),
+('Grade 6B', '2025-01-01', 2),
+('Grade 7A', '2025-01-01', 3),
+('Grade 7B', '2025-01-01', 4),
+('Grade 8A', '2025-01-01', 5),
+('Grade 8B', '2025-01-01', 6),
+('Grade 9A', '2025-01-01', 7),
+('Grade 9B', '2025-01-01', 8),
+('Grade 10A', '2025-01-01', 9),
+('Grade 10B', '2025-01-01', 10);
+-- 3. Insert 10 sample student records
+INSERT INTO STUDENTS (FirstName, LastName, Gender, ClassID, DOB, Phone)
+VALUES
+('John', 'Irakiza', 'Male', 1, '2012-03-15', '+250781111001'),
+('Alice', 'Uwase', 'Female', 2, '2012-06-21', '+250781111002'),
+('Eric', 'Ndayisenga', 'Male', 3, '2011-09-10', '+250781111003'),
+('Claudine', 'Mukamana', 'Female', 4, '2011-12-05', '+250781111004'),
+('Patrick', 'Habimana', 'Male', 5, '2010-04-18', '+250781111005'),
+('Grace', 'Uwimana', 'Female', 6, '2010-07-09', '+250781111006'),
+('Samuel', 'Twizerimana', 'Male', 7, '2009-01-25', '+250781111007'),
+('Esther', 'Iradukunda', 'Female', 8, '2009-11-14', '+250781111008'),
+('David', 'Nshimiyimana', 'Male', 9, '2008-02-20', '+250781111009'),
+('Diane', 'Mukandayisenga', 'Female', 10, '2008-05-30', '+250781111010');
+PART THREE: TABLE JOINS
+-- Retrieve top 3 performing students per class based on their average marks
+SELECT 
+    s.ClassID,
+    s.StudentID,
+    s.FirstName,
+    s.LastName,
+    ROUND(avg_marks, 2) AS AverageMarks
+FROM (
+    SELECT 
+        s.ClassID,
+        r.StudentID,
+        AVG(r.Marks) AS avg_marks,
+        RANK() OVER (PARTITION BY s.ClassID ORDER BY AVG(r.Marks) DESC) AS rank_per_class
+    FROM 
+        RESULTS r
+        JOIN STUDENTS s ON r.StudentID = s.StudentID
+        JOIN EXAMS e ON r.ExamID = e.ExamID
+        JOIN SUBJECTS sub ON e.SubjectID = sub.SubjectID
+    GROUP BY s.ClassID, r.StudentID
+) ranked
+JOIN STUDENTS s ON ranked.StudentID = s.StudentID
+WHERE ranked.rank_per_class <= 3
+ORDER BY s.ClassID, ranked.rank_per_class;
+--Update result grade thresholds based on revised policy.
+UPDATE Result
+SET Grade = CASE
+    WHEN Marks BETWEEN 90 AND 100 THEN 'A'
+    WHEN Marks BETWEEN 80 AND 89  THEN 'B'
+    WHEN Marks BETWEEN 70 AND 79  THEN 'C'
+    WHEN Marks BETWEEN 60 AND 69  THEN 'D'
+    WHEN Marks BETWEEN 50 AND 59  THEN 'E'
+    WHEN Marks BETWEEN 40 AND 49  THEN 'F'
+    WHEN Marks BETWEEN 0  AND 39  THEN 'S'
+    ELSE Grade  -- in case Marks is null or out of range
+END;
+--Identify teachers whose subjects have the lowest class average.
+WITH ClassSubjectAverage AS (
+    SELECT 
+        s.ClassID,
+        sub.SubjectID,
+        sub.Name AS SubjectName,
+        t.TeacherID,
+        t.FirstName AS TeacherFirstName,
+        t.LastName AS TeacherLastName,
+        AVG(r.Marks) AS AvgMarks
+    FROM RESULTS r
+    JOIN EXAMS e ON r.ExamID = e.ExamID
+    JOIN SUBJECTS sub ON e.SubjectID = sub.SubjectID
+    JOIN TEACHERS t ON sub.TeacherID = t.TeacherID
+    JOIN STUDENTS s ON r.StudentID = s.StudentID
+    GROUP BY s.ClassID, sub.SubjectID, sub.Name, t.TeacherID, t.FirstName, t.LastName
+)
+SELECT *
+FROM ClassSubjectAverage
+WHERE AvgMarks = (
+    SELECT MIN(AvgMarks) FROM ClassSubjectAverage
+)
+ORDER BY ClassID, TeacherLastName;
+--Create a view summarizing exam statistics per term.
+CREATE OR REPLACE VIEW ExamStatisticsPerTerm AS
+WITH TermMapping AS (
+    SELECT 
+        e.ExamID,
+        e.SubjectID,
+        CASE 
+            WHEN EXTRACT(MONTH FROM e.ExamDate) BETWEEN 1 AND 4 THEN 'Term 1'
+            WHEN EXTRACT(MONTH FROM e.ExamDate) BETWEEN 5 AND 8 THEN 'Term 2'
+            WHEN EXTRACT(MONTH FROM e.ExamDate) BETWEEN 9 AND 12 THEN 'Term 3'
+        END AS Term
+    FROM EXAMS e
+)
+SELECT
+    tm.Term,
+    sub.Name AS SubjectName,
+    t.FirstName || ' ' || t.LastName AS TeacherName,
+    COUNT(r.StudentID) AS TotalStudents,
+    ROUND(AVG(r.Marks), 2) AS AverageMarks,
+    MAX(r.Marks) AS HighestMarks,
+    MIN(r.Marks) AS LowestMarks,
+    SUM(CASE WHEN r.Grade = 'A' THEN 1 ELSE 0 END) AS GradeA,
+    SUM(CASE WHEN r.Grade = 'B' THEN 1 ELSE 0 END) AS GradeB,
+    SUM(CASE WHEN r.Grade = 'C' THEN 1 ELSE 0 END) AS GradeC,
+    SUM(CASE WHEN r.Grade = 'D' THEN 1 ELSE 0 END) AS GradeD,
+    SUM(CASE WHEN r.Grade = 'E' THEN 1 ELSE 0 END) AS GradeE,
+    SUM(CASE WHEN r.Grade = 'F' THEN 1 ELSE 0 END) AS GradeF,
+    SUM(CASE WHEN r.Grade = 'S' THEN 1 ELSE 0 END) AS GradeS
+FROM RESULTS r
+JOIN EXAMS e ON r.ExamID = e.ExamID
+JOIN TermMapping tm ON e.ExamID = tm.ExamID
+JOIN SUBJECTS sub ON e.SubjectID = sub.SubjectID
+JOIN TEACHERS t ON sub.TeacherID = t.TeacherID
+GROUP BY tm.Term, sub.Name, t.FirstName, t.LastName
+ORDER BY tm.Term, sub.Name;
+--Implement a trigger updating student grade distribution automatically.
+-- Step 1: Create the trigger function
+CREATE OR REPLACE FUNCTION update_result_grade()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Assign Grade based on Marks
+    IF NEW.Marks BETWEEN 90 AND 100 THEN
+        NEW.Grade := 'A';
+    ELSIF NEW.Marks BETWEEN 80 AND 89 THEN
+        NEW.Grade := 'B';
+    ELSIF NEW.Marks BETWEEN 70 AND 79 THEN
+        NEW.Grade := 'C';
+    ELSIF NEW.Marks BETWEEN 60 AND 69 THEN
+        NEW.Grade := 'D';
+    ELSIF NEW.Marks BETWEEN 50 AND 59 THEN
+        NEW.Grade := 'E';
+    ELSIF NEW.Marks BETWEEN 40 AND 49 THEN
+        NEW.Grade := 'F';
+    ELSIF NEW.Marks BETWEEN 0 AND 39 THEN
+        NEW.Grade := 'S';
+    ELSE
+        NEW.Grade := NULL; -- handles invalid or null marks
+    END IF;
+
+    RETURN NEW; -- required for BEFORE triggers
+END;
+$$ LANGUAGE plpgsql;
+
+-- Step 2: Create the trigger on the Result table
+CREATE TRIGGER trg_update_result_grade
+BEFORE INSERT OR UPDATE ON RESULTS
+FOR EACH ROW
+EXECUTE FUNCTION update_result_grade();
+
