@@ -1,0 +1,792 @@
+Read me file
+Project: SCHOOL EXAMS AND RESULTS MANAGEMENT DB
+
+A1
+
+1. -- Horizontal fragment on NodeA: School_ExaminationDB 
+--Creating fragment1 on Result table with a remote access on School_ExaminationDB2
+
+CREATE TABLE Result_A2
+ AS SELECT * FROM Result@SchoolDB_NodeB_Link WHERE MOD(ResultID,2)=0;
+
+--Creating fragment2 on Result table on School_ExaminationDB2( local access)
+
+
+CREATE TABLE Result_B
+ AS SELECT * FROM Result WHERE ResultID BETWEEN 1 AND 5;
+SELECT * FROM Result_B;
+
+2.
+--Inserting 5 rows in Result_A2
+
+-- Inserting 5 rows into fragment  Result_A2   on Node_A
+INSERT INTO Result_A2 (ResultID, ExamID, StudentID, Marks, Grade)
+VALUES (4, 101, 1, 85, 'A');
+
+INSERT INTO Result_A2 (ResultID, ExamID, StudentID, Marks, Grade)
+VALUES (5, 102, 2, 78, 'B');
+
+INSERT INTO Result_A2 (ResultID, ExamID, StudentID, Marks, Grade)
+VALUES (6, 103, 3, 90, 'A');
+
+INSERT INTO Result_A2(ResultID, ExamID, StudentID, Marks, Grade)
+VALUES (7, 104, 4, 65, 'C');
+
+INSERT INTO Result_A2(ResultID, ExamID, StudentID, Marks, Grade)
+VALUES (8, 105, 5, 88, 'A');
+
+--Inserting 5 rows into fragment Result_B on Node B
+
+INSERT INTO Result_B (ResultID, ExamID, StudentID, Marks, Grade)
+VALUES (4, 102, 1, 85, 'A');
+
+INSERT INTO Result_B (ResultID, ExamID, StudentID, Marks, Grade)
+VALUES (5, 103, 2, 78, 'B');
+
+INSERT INTO Result_B (ResultID, ExamID, StudentID, Marks, Grade)
+VALUES (6, 104, 3, 90, 'A');
+
+INSERT INTO Result_B (ResultID, ExamID, StudentID, Marks, Grade)
+VALUES (7, 105, 4, 65, 'C');
+
+INSERT INTO Result_B (ResultID, ExamID, StudentID, Marks, Grade)
+VALUES (8, 106, 5, 88, 'A');
+
+COMMIT;
+
+3. Creating View_ALL
+
+-- Creating view all
+CREATE OR REPLACE VIEW RESULT_ALL AS
+SELECT ResultID, ExamID, StudentID, Marks, Grade
+FROM Result_A2
+UNION ALL
+SELECT ResultID, ExamID, StudentID, Marks, Grade
+FROM Result_B@SchoolDB_NodeB_Link;
+
+4. DDL for both fragments
+--Creating fragment1 on Result table with a remote access on School_ExaminationDB2
+
+CREATE TABLE Result_A2 (Please, tolerate the use of index after A
+ AS SELECT * FROM Result@SchoolDB_NodeB_Link WHERE MOD(ResultID,2)=0;
+
+--Creating fragment2 on Result table on School_ExaminationDB2( local access)
+
+
+CREATE TABLE Result_B
+ AS SELECT * FROM Result WHERE ResultID BETWEEN 1 AND 5;
+SELECT * FROM Result_B;
+
+A2.
+1.--Creating a database link
+CREATE DATABASE LINK proj_link
+CONNECT TO system IDENTIFIED BY "<system@123>"
+USING '<ORCLPDB>';
+
+2.Viewing 5 rows of Exam table using remote access
+SELECT * FROM Exam@SchoolDB_NodeB_Link --I have kept existing link to avoid conflicts.
+WHERE ExamID <=7;
+3. --Distributed join
+--Creating Distributed join
+SELECT DISTINCT (r.ResultID),
+       r.ExamID,
+       r.StudentID,
+       r.Marks,
+       r.Grade,
+       s.FirstName,
+       s.LastName,
+       s.Gender
+FROM Result_B@SchoolDB_NodeA_Link  r
+JOIN Student s
+  ON r.StudentID = s.StudentID
+  WHERE r.StudentID <=5;
+A3. 
+1.--Serial aggregate
+SELECT 
+    Grade,
+    COUNT(*) AS Num_Students,
+    AVG(Marks) AS Avg_Marks,
+    MIN(Marks) AS Min_Marks,
+    MAX(Marks) AS Max_Marks
+FROM RESULT_ALL
+GROUP BY Grade
+ORDER BY Grade;
+
+2.--Parallel aggregation
+SELECT /*+ PARALLEL(rA,8) PARALLEL(rB,8) */
+       rA.Grade,
+       COUNT(*) AS Num_Students,
+       AVG(rA.Marks) AS Avg_Marks,
+       MIN(rA.Marks) AS Min_Marks,
+       MAX(rA.Marks) AS Max_Marks
+3. FROM Result_A2 rA
+JOIN Result_B@SchoolDB_NodeB_Link rB
+   ON rA.ResultID = rB.ResultID(+)
+GROUP BY rA.Grade
+ORDER BY rA.Grade;
+
+
+A4.
+1. --PL/SQL block
+--PL/SQL block
+BEGIN
+    -- Insert a row into local fragment on Node_A
+    INSERT INTO Result_A2 (ResultID, ExamID, StudentID, Marks, Grade)
+    VALUES (11, 101, 1, 90, 'A');
+
+    -- Insert a row into remote table on Node_B via DB link
+    INSERT INTO Result_B@SchoolDB_NodeB_Link(ResultID, ExamID, StudentID, Marks, Grade)
+    VALUES (12, 102, 6, 85, 'B');
+
+    -- Commit the distributed transaction
+    COMMIT;
+    
+    DBMS_OUTPUT.PUT_LINE('Distributed insert committed successfully.');
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        DBMS_OUTPUT.PUT_LINE('Error: ' || SQLERRM || ' - Transaction rolled back.');
+END;
+/
+
+2.-- Distributed Transaction Simulation (NodeA)
+-- Inserts into SUBJECT (local) and EXAM (remote)
+
+
+SET SERVEROUTPUT ON;
+
+BEGIN
+  DBMS_OUTPUT.PUT_LINE('--- Starting distributed transaction ---');
+
+  -- Local insert on NodeA (School_ExaminationDB1)
+  INSERT INTO SUBJECT (SubjectID, Name, Credits, TeacherID)
+  VALUES (501, 'Environmental Science', 4, 201);
+
+  DBMS_OUTPUT.PUT_LINE('Inserted into SUBJECT on NodeA.');
+
+  -- Remote insert on NodeB (School_ExaminationDB2)
+  INSERT INTO EXAM@SchoolDB_NodeB_Link (ExamID, SubjectID, ExamDate, Type)
+  VALUES (701, 501, DATE '2025-11-03', 'Final');
+
+  DBMS_OUTPUT.PUT_LINE('Inserted into EXAM on NodeB via DB link.');
+
+  COMMIT;
+  DBMS_OUTPUT.PUT_LINE('✅ Transaction committed successfully.');
+EXCEPTION
+  WHEN OTHERS THEN
+    DBMS_OUTPUT.PUT_LINE('❌ Error: ' || SQLERRM);
+    ROLLBACK;
+END;
+/
+--Disabling database link on School_ExaminationDB2
+ALTER DATABASE LINK SchoolDB_NodeB_Link DISABLE;
+--Check  in doubt transaction
+SELECT LOCAL_TRAN_ID, GLOBAL_TRAN_ID, STATE
+FROM DBA_2PC_PENDING;
+-- Rollback in doubt transaction
+ROLLBACK FORCE '2.27.1934@SchoolDB_NodeB'; 
+ 
+3. -- Display all in-doubt  distributed transactions
+COL LOCAL_TRAN_ID FORMAT A15
+COL GLOBAL_TRAN_ID FORMAT A35
+COL STATE FORMAT A15
+
+SELECT LOCAL_TRAN_ID, GLOBAL_TRAN_ID, STATE
+FROM DBA_2PC_PENDING;
+--Verification
+SELECT LOCAL_TRAN_ID, GLOBAL_TRAN_ID, STATE
+FROM DBA_2PC_PENDING;
+
+4. Repeating and clean up
+SELECT LOCAL_TRAN_ID, GLOBAL_TRAN_ID, STATE
+FROM DBA_2PC_PENDING;
+
+COMMIT FORCE '2.27.1934@SchoolDB_NodeB_Link';
+
+ROLLBACK FORCE '2.27.1934@SchoolDB_NodeB_Link';
+
+--Clean up
+SELECT LOCAL_TRAN_ID, GLOBAL_TRAN_ID, STATE
+FROM DBA_2PC_PENDING;
+
+A5: Distributed Lock Conflict & Diagnosis
+1. --On School_ExaminationDB1
+-- Connect to NodeA
+CONNECT School_ExaminationDB1/system@ORCLPDB;
+
+-- Start a manual transaction
+SET AUTOCOMMIT OFF;
+
+-- Perform an update on a remote table (NodeB)
+UPDATE EXAM@SchoolDB_NodeB_Link
+SET Type = 'Midterm'
+WHERE ExamID = 8;
+
+-- Keeping this session open
+
+2.
+-- Option 1: Direct NodeB session
+CONNECT School_ExaminationDB2/system@ORCLPDB;
+
+-- Start transaction
+SET AUTOCOMMIT OFF;
+
+-- Attempt to update the same Exam row
+UPDATE EXAM
+SET Type = 'Final'
+WHERE ExamID = 8;
+
+3.
+-- Who is being blocked and who is waiting
+SELECT 
+    w.session_id AS waiting_session,
+    w.oracle_username AS waiting_user,
+    w.locked_mode AS waiting_mode,
+    b.session_id AS blocking_session,
+    b.oracle_username AS blocking_user,
+    b.locked_mode AS blocking_mode
+FROM 
+    DBA_WAITERS w
+JOIN 
+    DBA_BLOCKERS b
+ON 
+    w.id1 = b.id1
+AND w.id2 = b.id2;
+4. 
+-- executing COMMIT on School_ExaminationDB1
+
+COMMIT;
+-- ROLLBACK transaction of School_ExaminationDB1
+
+ROLLBACK;
+-- The blocked update now completes
+UPDATE EXAM@SchoolDB_NodeB_Link
+SET Type = 'Final'
+WHERE ExamID = 8;
+
+-- Commit the transaction
+COMMIT;
+--Verifying consistency
+
+SELECT * FROM EXAM@SchoolDB_NodeB_Link
+WHERE ExamID = 8;
+
+B6 :Declarative Rules Hardening (≤10 committed rows)
+1. --Ensure NOT NULL constraint
+
+ALTER TABLE Exam
+MODIFY ExamDate DATE NOT NULL;
+
+ALTER TABLE  Result
+MODIFY Marks INTEGER NOT NULL;
+
+ALTER TABLE  Result
+MODIFY Grade VARCHAR2(1) NOT NULL;
+
+--Verifying Marks range
+ALTER TABLE  Result
+ADD CONSTRAINT chk_marks_range
+CHECK (Marks BETWEEN 0 AND 100);
+
+--mark grades: Like in Rwanda Secondary Schools
+ALTER TABLE Result
+ADD CONSTRAINT chk_grade_domain
+CHECK (Grade IN ('A','B','C','D','E','F','S'));
+
+--Ensure ExamDate is not in the future
+
+ALTER TABLE Exam
+ADD CONSTRAINT chk_examdate_past
+CHECK (ExamDate <= SYSDATE);
+
+2.
+BEGIN
+    -- Passing insert
+    INSERT INTO EXAM (ExamID, SubjectID, ExamDate, Type)
+    VALUES (101, 1, DATE '2025-10-01', 'Midterm');
+    DBMS_OUTPUT.PUT_LINE('Inserted EXAM 101 successfully.');
+
+    -- Failing insert: invalid Type
+    BEGIN
+        INSERT INTO EXAM (ExamID, SubjectID, ExamDate, Type)
+        VALUES (102, 2, DATE '2025-10-10', 'Test'); -- invalid Type
+        DBMS_OUTPUT.PUT_LINE('Inserted EXAM 102 successfully.');
+    EXCEPTION
+        WHEN OTHERS THEN
+            DBMS_OUTPUT.PUT_LINE('Failed to insert EXAM 102: ' || SQLERRM);
+            ROLLBACK;  -- rollback only this block
+    END;
+
+    -- Another failing insert: future date
+    BEGIN
+        INSERT INTO EXAM (ExamID, SubjectID, ExamDate, Type)
+        VALUES (103, 3, DATE '2099-01-01', 'Quiz'); -- future date
+        DBMS_OUTPUT.PUT_LINE('Inserted EXAM 103 successfully.');
+    EXCEPTION
+        WHEN OTHERS THEN
+            DBMS_OUTPUT.PUT_LINE('Failed to insert EXAM 103: ' || SQLERRM);
+            ROLLBACK;
+    END;
+
+    COMMIT; -- commit only successful inserts
+END;
+/
+3. 
+--Failing insert with clean up
+
+-- Exam Table Inserts
+
+
+-- Inserting into Exam with COMMIT
+
+INSERT INTO EXAM (ExamID, SubjectID, ExamDate, Type)
+VALUES (12, 15, DATE '2025-10-01', 'Midterm');
+
+INSERT INTO EXAM (ExamID, SubjectID, ExamDate, Type)
+VALUES (13, 16, DATE '2025-11-01', 'Final');
+
+-- Failing Inserts 
+BEGIN
+  --  Future date
+  BEGIN
+    INSERT INTO EXAM (ExamID, SubjectID, ExamDate, Type)
+    VALUES (14, 17, DATE '2030-01-01', 'Midterm');
+  EXCEPTION
+    WHEN OTHERS THEN
+      DBMS_OUTPUT.PUT_LINE('❌ EXAM Future date rejected - ' || SQLERRM);
+      ROLLBACK;
+  END;
+
+  --  NULL Type
+  BEGIN
+    INSERT INTO EXAM (ExamID, SubjectID, ExamDate, Type)
+    VALUES (15, 18, DATE '2025-10-10', NULL);
+  EXCEPTION
+    WHEN OTHERS THEN
+      DBMS_OUTPUT.PUT_LINE('❌ EXAM NULL Type rejected - ' || SQLERRM);
+      ROLLBACK;
+  END;
+END;
+/
+
+
+B7 :E–C–A Trigger for Denormalized Totals (small DML set)
+
+1. 
+CREATE TABLE Exam_AUDIT (
+    bef_total   NUMBER,           
+    aft_total   NUMBER,           
+    changed_at  TIMESTAMP DEFAULT SYSTIMESTAMP,  
+    key_col     VARCHAR2(64)      
+);
+
+--Exam_AUDIT Structure
+
+DESCRIBE Exam_AUDIT;
+2.
+ALTER TABLE Exam
+ADD (Total_marks NUMBER DEFAULT 0);
+
+CREATE OR REPLACE TRIGGER trg_result_totals
+AFTER INSERT OR UPDATE OR DELETE ON Result
+DECLARE
+BEGIN
+    -- Update denormalized totals for all exams affected in this statement
+    MERGE INTO Exam e
+    USING (
+        SELECT ExamID, SUM(Marks) AS Total_marks
+        FROM Result
+        GROUP BY ExamID
+    ) r
+    ON (e.ExamID = r.ExamID)
+    WHEN MATCHED THEN
+      UPDATE SET e.Total_marks = r.Total_marks;
+
+    -- Optional: set Total_marks = 0 for Exams with no results
+    UPDATE Exam
+    SET Total_marks = 0
+    WHERE ExamID NOT IN (SELECT DISTINCT ExamID FROM Result);
+END;
+/
+
+3. 
+
+BEGIN
+ 
+  -- Insert 2 new rows 
+
+  INSERT INTO RESULT (ResultID, ExamID, StudentID, Marks, Grade)
+  VALUES (12, 17, 13, 78, 'B');
+
+  INSERT INTO Result(ResultID, ExamID, StudentID, Marks, Grade)
+  VALUES (13, 18, 14, 88, 'A');
+
+--UPDATES 
+  -- Update 1 existing row
+  UPDATE result
+  SET Marks = Marks + 10, Grade = 'A'
+  WHERE ResultID = 12;
+
+  --DELETE 
+  -- Delete 1 existing row
+  DELETE FROM Result
+  WHERE ResultID = 13;
+
+
+  COMMIT;
+
+EXCEPTION
+  WHEN OTHERS THEN
+    DBMS_OUTPUT.PUT_LINE('Error encountered: ' || SQLERRM);
+    ROLLBACK;
+END;
+/
+
+4.
+DECLARE
+    v_bef_Total NUMBER;
+    v_aft_Total NUMBER;
+BEGIN
+    --Audit Row 1 
+    SELECT COUNT(*) INTO v_bef_Total FROM Exam;
+    
+    -- Insert a new exam 
+    INSERT INTO Result (ResultID, ExamID, StudentID, Marks, Grade)
+    VALUES (15, 19, 16, 95, 'A');
+    
+   
+  COMMIT;
+    
+    -- Capture after Total
+    SELECT COUNT(*) INTO v_aft_Total FROM Exam;
+    
+    -- Insert audit row 1
+    INSERT INTO Exam_AUDIT (bef_Total, aft_Total, key_col)
+    VALUES (v_bef_Total, v_aft_Total, 'ExamID:19');
+    
+    -- Audit Row 2
+    SELECT COUNT(*) INTO v_bef_Total FROM Exam;
+    
+    --  Update a result
+    UPDATE Result SET Marks = Marks + 5 WHERE ResultID = 15;
+    COMMIT;
+    
+    SELECT COUNT(*) INTO v_aft_Total FROM Exam;
+    
+    INSERT INTO Exam_AUDIT (bef_Total, aft_Total, key_col)
+    VALUES (v_bef_Total, v_aft_Total, 'ResultID:15');
+    
+   
+    COMMIT;
+    
+    SELECT COUNT(*) INTO v_aft_Total FROM Exam;
+    
+       
+END;
+/
+
+B8 :Recursive Hierarchy Roll-Up (6–10 rows)
+1.
+CREATE TABLE HIER (
+    parent_id  NUMBER,       
+    child_id   NUMBER NOT NULL, 
+    CONSTRAINT hier_pk PRIMARY KEY (parent_id, child_id),
+    CONSTRAINT hier_fk_parent FOREIGN KEY (parent_id)
+        REFERENCES HIER(child_id) -- self-reference for parent
+        ON DELETE CASCADE
+);
+-- Root node (no parent)
+INSERT INTO HIER (parent_id, child_id) VALUES (NULL, 1);
+
+-- Children of root
+INSERT INTO HIER (parent_id, child_id) VALUES (1, 2);
+INSERT INTO HIER (parent_id, child_id) VALUES (1, 3);
+
+-- Sub-child
+INSERT INTO HIER (parent_id, child_id) VALUES (2, 4);
+INSERT INTO HIER (parent_id, child_id) VALUES (2, 5);
+2.
+-- Level 1: Root nodes
+INSERT INTO HIER (parent_id, child_id) VALUES (NULL, 1); -- Root A
+INSERT INTO HIER (parent_id, child_id) VALUES (NULL, 2); -- Root B
+
+-- Level 2: Children of root nodes
+INSERT INTO HIER (parent_id, child_id) VALUES (1, 3); -- Child of Root A
+INSERT INTO HIER (parent_id, child_id) VALUES (1, 4); -- Child of Root A
+INSERT INTO HIER (parent_id, child_id) VALUES (2, 5); -- Child of Root B
+INSERT INTO HIER (parent_id, child_id) VALUES (2, 6); -- Child of Root B
+
+-- Level 3: Grandchildren
+INSERT INTO HIER (parent_id, child_id) VALUES (3, 7); -- Child of 3
+INSERT INTO HIER
+3.
+WITH hier_recursive (child_id, root_id, depth) AS (
+    -- Base level: root nodes
+    SELECT child_id,
+           child_id AS root_id,
+           0 AS depth
+    FROM HIER
+    WHERE parent_id IS NULL
+
+    UNION ALL
+
+    -- Recursive step: find children
+    SELECT h.child_id,
+           r.root_id,
+           r.depth + 1
+    FROM HIER h
+    JOIN hier_recursive r
+      ON h.parent_id = r.child_id
+)
+SELECT *
+FROM hier_recursive
+ORDER BY root_id, depth, child_id;
+WITH hier_recursive (child_id, root_id, depth) AS (
+    SELECT child_id,
+           child_id AS root_id,
+           0 AS depth
+    FROM HIER
+    WHERE parent_id IS NULL
+
+    UNION ALL
+
+    SELECT h.child_id,
+           r.root_id,
+           r.depth + 1
+    FROM HIER h
+    JOIN hier_recursive r
+      ON h.parent_id = r.child_id
+)
+SELECT r.root_id,
+       COUNT(res.ResultID) AS num_results,
+       SUM(res.Marks) AS total_marks
+FROM hier_recursive r
+JOIN EXAM e
+  ON e.ExamID = r.child_id         -- join child_id to ExamID
+JOIN RESULT res
+  ON res.ExamID = e.ExamID
+GROUP BY r.root_id
+ORDER BY r.root_id;
+4.
+WITH hier_recursive (child_id, root_id, depth) AS (
+    -- Base level: root nodes
+    SELECT child_id,
+           child_id AS root_id,
+           0 AS depth
+    FROM HIER
+    WHERE parent_id IS NULL
+
+    UNION ALL
+
+    -- Recursive step: find children
+    SELECT h.child_id,
+           r.root_id,
+           r.depth + 1
+    FROM HIER h
+    JOIN hier_recursive r
+      ON h.parent_id = r.child_id
+)
+SELECT 
+    r.root_id,
+    r.child_id,
+    r.depth,
+    COUNT(res.ResultID) AS num_results,
+    SUM(res.Marks) AS total_marks
+FROM hier_recursive r
+LEFT JOIN EXAM e
+    ON e.ExamID = r.child_id       -- child_id corresponds to ExamID
+LEFT JOIN RESULT res
+    ON res.ExamID = e.ExamID
+GROUP BY r.root_id, r.child_id, r.depth
+ORDER BY r.root_id, r.depth, r.child_id;
+
+B9 :Mini-Knowledge Base with Transitive Inference (≤10 facts)
+
+1.
+CREATE TABLE TRIPLE (
+    s VARCHAR2(64) NOT NULL,  -- Subject
+    p VARCHAR2(64) NOT NULL,  -- Predicate
+    o VARCHAR2(64) NOT NULL   -- Object
+);
+
+INSERT INTO TRIPLE (s, p, o) VALUES ('Exam:20', 'hasResult', 'Result:25');
+INSERT INTO TRIPLE (s, p, o) VALUES ('Teacher:08', 'teaches', 'Subject:50');
+INSERT INTO TRIPLE (s, p, o) VALUES ('Student:112', 'enrolledIn', 'Class:'S1);
+
+2.
+-- Relationships between teachers, subjects, and classes
+INSERT INTO TRIPLE (s, p, o) VALUES ('Teacher:201', 'teaches', 'Subject:501');
+INSERT INTO TRIPLE (s, p, o) VALUES ('Teacher:202', 'teaches', 'Subject:502');
+INSERT INTO TRIPLE (s, p, o) VALUES ('Subject:501', 'assignedToClass', 'Class:1');
+INSERT INTO TRIPLE (s, p, o) VALUES ('Subject:502', 'assignedToClass', 'Class:2');
+
+-- Student enrollments
+INSERT INTO TRIPLE (s, p, o) VALUES ('Student:301', 'enrolledIn', 'Class:1');
+INSERT INTO TRIPLE (s, p, o) VALUES ('Student:302', 'enrolledIn', 'Class:2');
+
+-- Exam results
+INSERT INTO TRIPLE (s, p, o) VALUES ('Result:901', 'belongsToExam', 'Exam:801');
+INSERT INTO TRIPLE (s, p, o) VALUES ('Result:902', 'belongsToExam', 'Exam:802');
+
+-- Type hierarchy example
+INSERT INTO TRIPLE (s, p, o) VALUES ('Exam', 'isTypeOf', 'Assessment');
+INSERT INTO TRIPLE (s, p, o) VALUES ('Result', 'isTypeOf', 'AssessmentOutcome');
+
+3.
+WITH isa_recursive (entity, supertype, depth, base_label) AS (
+    -- Base level: direct isTypeOf triples
+    SELECT s AS entity,
+           o AS supertype,
+           1 AS depth,
+           s AS base_label
+    FROM TRIPLE
+    WHERE p = 'isTypeOf'
+
+    UNION ALL
+
+    -- Recursive step: follow supertype chain
+    SELECT r.entity,
+           t.o AS supertype,
+           r.depth + 1,
+           r.base_label
+    FROM isa_recursive r
+    JOIN TRIPLE t
+      ON r.supertype = t.s
+     AND t.p = 'isTypeOf'
+)
+SELECT *
+FROM isa_recursive
+WHERE ROWNUM <= 10
+ORDER BY depth, base_label;
+
+4.
+WITH isa_recursive (entity, supertype, depth, base_label) AS (
+    -- Base level: direct isTypeOf triples
+    SELECT s AS entity,
+           o AS supertype,
+           1 AS depth,
+           s AS base_label
+    FROM TRIPLE
+    WHERE p = 'isTypeOf'
+
+    UNION ALL
+
+    -- Recursive step: follow supertype chain
+    SELECT r.entity,
+           t.o AS supertype,
+           r.depth + 1,
+           r.base_label
+    FROM isa_recursive r
+    JOIN TRIPLE t
+      ON r.supertype = t.s
+     AND t.p = 'isTypeOf'
+)
+SELECT *
+FROM isa_recursive
+WHERE ROWNUM <= 10
+ORDER BY depth, base_label;
+
+B10 :Business Limit Alert (Function + Trigger) (row-budget safe)
+1.
+CREATE TABLE BUSINESS_LIMITS (
+    rule_key  VARCHAR2(64) NOT NULL,         -- Unique identifier for the rule
+    threshold NUMBER NOT NULL,               -- Threshold value for the rule
+    active    CHAR(1) DEFAULT 'Y' CHECK(active IN ('Y','N')), -- Active flag
+    CONSTRAINT business_limits_pk PRIMARY KEY (rule_key)
+);
+
+INSERT INTO BUSINESS_LIMITS (rule_key, threshold, active)
+VALUES ('MAX_EXAM_MARK', 100, 'Y');
+
+COMMIT;
+2.
+CREATE OR REPLACE FUNCTION fn_should_alert(
+    p_exam_id IN EXAM.ExamID%TYPE   -- Exam to check; optional parameter
+) RETURN NUMBER
+IS
+    v_threshold NUMBER;
+    v_violation NUMBER;
+BEGIN
+    -- Get active threshold from BUSINESS_LIMITS
+    SELECT threshold
+    INTO v_threshold
+    FROM BUSINESS_LIMITS
+    WHERE active = 'Y'
+    FETCH FIRST 1 ROWS ONLY; -- ensure single active rule
+
+    -- Check if any result exceeds threshold
+    SELECT COUNT(*) 
+    INTO v_violation
+    FROM RESULT
+    WHERE ExamID = p_exam_id
+      AND Marks > v_threshold;
+
+    -- Return 1 if violation exists, else 0
+    IF v_violation > 0 THEN
+        RETURN 1;
+    ELSE
+        RETURN 0;
+    END IF;
+
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        -- No active rule found → assume no alert
+        RETURN 0;
+    WHEN OTHERS THEN
+        -- Handle unexpected errors
+        RETURN 0;
+END;
+/
+3.
+CREATE OR REPLACE TRIGGER trg_result_business_limit
+BEFORE INSERT OR UPDATE ON RESULT
+FOR EACH ROW
+DECLARE
+    v_alert NUMBER;
+BEGIN
+    -- Call the function to check if new/updated row violates active business limit
+    v_alert := fn_should_alert(:NEW.ExamID);
+
+    -- If violation exists, raise an application error
+    IF v_alert = 1 THEN
+        RAISE_APPLICATION_ERROR(
+            -20001,
+            'Business limit violated: marks exceed active threshold'
+        );
+    END IF;
+END;
+/
+-- Attempt to insert a violating result
+INSERT INTO Result (ResultID, ExamID, StudentID, Marks, Grade)
+VALUES (20, 22, 113, 105, 'A');  -- Marks exceed threshold 100
+
+
+4.
+BEGIN
+    --  Failing Case 1 
+    BEGIN
+        INSERT INTO RESULT (ResultID, ExamID, StudentID, Marks, Grade)
+        VALUES (21, 23, 114, 105, 'A');  -- Exceeds threshold 100
+        COMMIT;
+    EXCEPTION
+        WHEN OTHERS THEN
+            DBMS_OUTPUT.PUT_LINE('Failing Insert 1: ' || SQLERRM);
+            ROLLBACK;
+    END;
+
+    -- Failing Case 2 
+    BEGIN
+        INSERT INTO Result (ResultID, ExamID, StudentID, Marks, Grade)
+        VALUES (22, 24, 115, 110, 'A');  -- Exceeds threshold 100
+        COMMIT;
+    EXCEPTION
+        WHEN OTHERS THEN
+            DBMS_OUTPUT.PUT_LINE('Failing Insert 2: ' || SQLERRM);
+            ROLLBACK;
+    END;
+END;
+/
+
+
+
+
